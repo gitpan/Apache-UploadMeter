@@ -13,3 +13,21 @@ Revision history for mod_perl library Apache::UploadMeter.
 0.16a: Jan  08, 2002 -  Added basic JIT handlers to configuration
 ###
 0.17 : Jan  13, 2002 - Cleaned up some more code and documentation - seems beta-able
+###
+UploadMeter_port.patch:  Adds the port number to the generated Refresh URL
+
+UploadMeter_finished.patch:  Stops the Meter from Refreshing endlessly
+when the upload is complete
+
+UploadMeter_starttime.patch:  Adds the time the upload started to the
+output to allow upload rate calculations
+
+(Patches submitted by Cees Hek <cees@sitesuite.org>)
+###
+XSLT + XML Patch submitted by Cees Hek <cees@sitesuite.org>
+Started migrating internal calculations to XSLT
+Updated Schema (switch from DTD to xsd)
+###
+0.21 : Feb   3, 2002 - Prebundled "basic" skin on sourceforge.  Migrate from DTD to schema.  Time/Date formatting currently server-side.
+###
+0.22 : Feb   4, 2002 - Fixed incorrect XSLT address.

@@ -2,7 +2,7 @@ package Apache::UploadMeter;
 
 use strict;
 use warnings;
-use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
+use vars qw($VERSION @ISA);
 use mod_perl 0.95 qw(PerlStackedHandlers PerlSections PerlHeaderParserHandler PerlFixupHandler PerlHandler);
 use Apache::Constants qw(OK DECLINED HTTP_MOVED_TEMPORARILY BAD_REQUEST NOT_FOUND);
 use Apache::Util qw(escape_uri);
@@ -10,14 +10,12 @@ use Apache::Request;
 use Apache::SSI;
 use Digest::MD5 qw(md5_hex);
 use Cache::FileCache;
+use Number::Format ();
+use Date::Format ();
 
 BEGIN {
-    use Exporter ();
-    $VERSION=0.17 ;
-    @ISA=qw(Exporter Apache::SSI);
-    @EXPORT=();
-    @EXPORT_OK=qw ( );
-    %EXPORT_TAGS=();
+    $VERSION=0.22;
+    @ISA=qw(Apache::SSI);
 }
 
 ### Version History
@@ -29,7 +27,12 @@ BEGIN {
 # 0.15a: Dec  30, 2001 - Recovered version 0.15 (Thanks - you know who you are if you made it possible) and moved namespace to sourceforge.
 # 0.16a: Jan  08, 2002 -  Added basic JIT handlers to configuration
 # 0.17 : Jan  13, 2002 - Cleaned up some more code and documentation - seems beta-able
+# 0.21 : Feb   3, 2002 - Prebundled "basic" skin on sourceforge.  Migrate from DTD to schema.  Time/Date formatting currently server-side.
 
+## Presets
+BEGIN {
+    eval ("\$".__PACKAGE__."::XSLT='http://apache-umeter.sourceforge.net/apache-umeter-".$VERSION.".xsl'");
+}
 
 ### Globals
 my %cache_options=('default_expires_in'=>900,'auto_purge_interval'=>60,'namespace'=>'apache_umeter'); #If the hooks don't get called in 15 minute, assume it's done
@@ -55,6 +58,7 @@ sub u_handler($)
 	    warn ("Instantiating cache for $hook_data") if (_conf("DEBUG")>0);
 	    my $name=$upload->filename;
 	    $hook_cache->set($hook_data."name",$name);
+	    $hook_cache->set($hook_data."starttime",time());
 	}
 	warn ("Updating cache: $hook_data LEN --> $len") if (_conf("DEBUG")>2);
         $hook_cache->set($hook_data."len",$len);
@@ -96,6 +100,7 @@ sub ufu_handler($)
     }
     my $size=$hook_cache->get($u_id."size");
     $hook_cache->set($u_id."len",$size);
+    $hook_cache->set($u_id."finished",1);
     return OK;
 }    
 
@@ -106,13 +111,14 @@ sub um_handler($)
     $r->no_cache(1);
     my $q=Apache::Request->new($r);
     my $hook_id=$q->param('hook_id') || undef;
-    my $initial_request=$q->param('returned') || 1;
+    my $initial_request=!($q->param('returned') || 0);
     return BAD_REQUEST unless defined($hook_id);
     my $hook_cache=new Cache::FileCache(\%cache_options);
     unless ($hook_cache) {
     	$r->log_error("Could not instantiate FileCache.  Exiting.");
     	return DECLINED;
     }
+    my $finished = $hook_cache->get($hook_id."finished") || 0;
     my $len=$hook_cache->get($hook_id."len") || undef;
     if (!(defined($len))) {
 	my $problem=1;
@@ -139,24 +145,65 @@ sub um_handler($)
     }
     my $size=$hook_cache->get($hook_id."size") || "Unknown";
     my $fname=$hook_cache->get($hook_id."name") || "Unknown";
+
+    # This is better done in the XSL, I think.  I want to minimize Apache's work here and leave the browser to calculate the stuff.  What I may eventually do is create a second XSL stylesheet which translates the "minimal" formatting into this formatting.  I'm not going to change this first, but it's on my list of things to do - Issac
+
+    # Calculate elapsed and remaining time
+    my $currenttime = time();
+    my $starttime=$hook_cache->get($hook_id."starttime") || $currenttime;
+    my $etime = $currenttime - $starttime;
+    my $rtime = ($finished) ? 0 : int ($etime / $len * $size) - $etime;
+
+    # Calculate total rate and current rate
+    my $lastupdatetime = $hook_cache->get($hook_id."lastupdatetime");
+    my $lastupdatelen = $hook_cache->get($hook_id."lastupdatelen");
+    my $currentrate = int (($len - $lastupdatelen) / ($currenttime - $lastupdatetime)) if ($currenttime != $lastupdatetime);
+    my $rate = int ($len / ($currenttime - $starttime)) if ($currenttime != $starttime);
+    $hook_cache->set($hook_id."lastupdatetime", $currenttime);
+    $hook_cache->set($hook_id."lastupdatelen", $len);
+    
+    # Format values for easy display
+    my $fsize = Number::Format::format_bytes($size, 2);
+    my $flen = Number::Format::format_bytes($len, 2);
+    my $fetime = Date::Format::time2str('%H:%M:%S', $etime, 'GMT');
+    my $frtime = Date::Format::time2str('%H:%M:%S', $rtime, 'GMT');
+    my $fcurrentrate = Number::Format::format_bytes($currentrate, 2).'/s';
+    my $frate = Number::Format::format_bytes($rate, 2).'/s';
+
+    # build the Refresh url
     my $s=$r->server;
     my $name=$s->server_hostname;
     my $args=$r->args;
     if ($initial_request) { $args=$args.(defined($args)?"&":"")."returned=1";}
-    $r->header_out("Refresh"=>"5;url=".($ENV{HTTPS}?"https":"http")."://".$name.$r->uri."?".escape_uri($args));
+    if ($finished) {
+    	# Cleanup the cache since we are finished
+# Not needed.  The hook automatically dumps values every 15 minutes for this reason.  - Issac
+
+#        $hook_cache->remove($hook_id."finished");
+#        $hook_cache->remove($hook_id."len");
+#        $hook_cache->remove($hook_id."name");
+#        $hook_cache->remove($hook_id."size");
+#        $hook_cache->remove($hook_id."starttime");
+#        $hook_cache->remove($hook_id."lastupdaterate");
+#        $hook_cache->remove($hook_id."lastupdatelen");
+    } else {
+    	# Set a refresh header so the meter gets updated
+        $r->header_out("Refresh"=>"5;url=".($ENV{HTTPS}?"https":"http")."://".$name.':'.$s->port.$r->uri."?".escape_uri($args));
+    }
     $r->send_http_header('text/xml');
     return OK if $r->header_only;
+    my $xslt=_conf('XSLT');
     {
 	print <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE APACHE_UPLOADMETER SYSTEM "http://apache-umeter.sourceforge.net/apache_umeter.dtd
-
-">
-<APACHE_UPLOADMETER HOOK_ID="$hook_id">
-    <FILE NAME="$fname">
-	<RECIEVED>$len</RECIEVED>
-	<TOTAL>$size</TOTAL>
-    </FILE>
+<?xml-stylesheet type="text/xsl" href="$xslt"?>
+<APACHE_UPLOADMETER HOOK_ID="$hook_id" FILE="$fname" FINISHED="$finished" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://apache-umeter.sourceforge.net/apache-umeter-$VERSION.xsd">
+    <RECIEVED VALUE="$len">$flen</RECIEVED>
+    <TOTAL VALUE="$size">$fsize</TOTAL>
+    <ELAPSEDTIME VALUE="$etime">$fetime</ELAPSEDTIME>
+    <REMAININGTIME VALUE="$rtime">$frtime</REMAININGTIME>
+    <RATE VALUE="$rate">$frate</RATE>
+    <CURRENTRATE VALUE="$currentrate">$fcurrentrate</CURRENTRATE>
 </APACHE_UPLOADMETER>
 EOF
     }
@@ -208,7 +255,7 @@ sub ssi_uploadform($$)
 <!-- Cloaking...
 function openUploadMeter()
 {
-    uploadWindow=window.open(\"${meter}?hook_id=${u_id}\",\"_new\",\"toolbar=no,location=no,directories=no,status=yes,menubar=no,scrollbars=no,resizeable=no,width=450,height=150\");
+    uploadWindow=window.open(\"${meter}?hook_id=${u_id}\",\"_new\",\"toolbar=no,location=no,directories=no,status=yes,menubar=no,scrollbars=no,resizeable=no,width=450,height=240\");
 }
 // End cloaking-->
 </SCRIPT>
@@ -255,7 +302,6 @@ sub configure()
     no strict;
     $Location{$UploadScript} = {
 	Options => '+ExecCGI',
-	#PerlHeaderParserHandler => $namespace."::u_handler",
 	PerlHeaderParserHandler => $namespace."::upload_jit_handler",
     };
     $Location{$UploadMeter} = {
@@ -274,7 +320,6 @@ sub _conf($)
     my $arg=shift;
     return eval("\$".__PACKAGE__."::".$arg);
 }
-
 
 # Preloaded methods go here.
 
