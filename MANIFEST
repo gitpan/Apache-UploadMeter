@@ -1,0 +1,9 @@
+Changes
+Makefile.PL
+MANIFEST
+README
+INSTALL
+test.pl
+Apache_Request.patch
+UploadMeter.pm
+LICENSE

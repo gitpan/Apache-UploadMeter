@@ -1,0 +1,70 @@
+*** Request/Request.xs	Wed Jun 13 01:46:36 2001
+--- ../libapreq-0.33.new/Request/Request.xs	Mon Oct 22 18:33:59 2001
+***************
+*** 190,201 ****
+      return sv; 
+  } 
+  
+  static int upload_hook(void *ptr, char *buf, int len, ApacheUpload *upload)
+  {
+      UploadHook *hook = (UploadHook *)ptr;
+! 
+!     if (!(upload->fp && ApacheRequest_tmpfile(upload->req, upload))) {
+!         return -1; /* error */
+      }
+  
+      {
+--- 190,204 ----
+      return sv; 
+  } 
+  
++ 
+  static int upload_hook(void *ptr, char *buf, int len, ApacheUpload *upload)
+  {
+      UploadHook *hook = (UploadHook *)ptr;
+!      
+!     if (!(upload->fp)) {
+!         if (!(ApacheRequest_tmpfile(upload->req, upload))) {
+!             return -1; /* error */
+!         }
+      }
+  
+      {
+***************
+*** 222,238 ****
+      	PUSHs(hook->data);
+  
+      	PUTBACK;
+!     	perl_call_sv(hook->sub, G_EVAL|G_DISCARD);
+!     	FREETMPS;
+      	LEAVE;
+      }
+  
+      if (SvTRUE(ERRSV)) {
+          return -1;
+      }
+! 
+      return PerlIO_write(PerlIO_importFILE(upload->fp,0), buf, len);
+  }
+  
+  static void upload_hook_cleanup(void *ptr)
+  {
+--- 225,242 ----
+      	PUSHs(hook->data);
+  
+      	PUTBACK;
+!     	perl_call_sv(hook->sub, G_EVAL|G_DISCARD);   
+!         FREETMPS;
+      	LEAVE;
+      }
+  
+      if (SvTRUE(ERRSV)) {
+          return -1;
+      }
+!     
+      return PerlIO_write(PerlIO_importFILE(upload->fp,0), buf, len);
+  }
++ 
+  
+  static void upload_hook_cleanup(void *ptr)
+  {

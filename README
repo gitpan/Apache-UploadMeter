@@ -1,0 +1,40 @@
+Apache/UploadMeter
+================================
+
+INSTALLATION
+
+To install this module type the following:
+
+   perl Makefile.PL
+   make
+   make test
+   make install
+
+DEPENDENCIES
+
+This module requires these other modules and libraries:
+
+   Apache::Request
+   Cache::Cache
+   Apache::SSI
+
+IMPORTANT NOTICE:
+    This package currently requires a DEVELOPMENT version of libapreq
+    (a.k.a. Apache::Request).  A patch is included here which can be
+    used against libapreq-0.33  The file is Apache_Request.patch
+    
+    Future versions of libapreq will not require this.
+
+FUTURE INCLUSIONS:
+    This package supports *one* UploadMeter for the entire server (eg,
+    mod_perl_start.pl) that it's in.  This must be changed.  It will. 
+    Don't worry about it.  DO bug me (nicely) about it, if you need it.
+    Also, suggestions on how the configuration for multiple
+    UploadMeters could be implemented would be nice.  I sorta don't
+    really have any sense of how to set up the external configuration...
+
+COPYRIGHT AND LICENCE
+
+Copyright (c)2001 Issac Goldstand - All rights reserved.
+This library is free software. It can be redistributed and/or modified
+under the same terms as Perl itself.
