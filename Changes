@@ -9,3 +9,7 @@ Revision history for mod_perl library Apache::UploadMeter.
 0.14 : Dec  11, 2001 - Added configuration code
 ###
 0.15 : Dec  12, 2001 - Improved configuration code to auto-detect namespace (for possible future subclassing)
+###
+0.16a: Jan  08, 2002 -  Added basic JIT handlers to configuration
+###
+0.17 : Jan  13, 2002 - Cleaned up some more code and documentation - seems beta-able

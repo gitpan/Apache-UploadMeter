@@ -6,13 +6,14 @@ use vars qw($VERSION @ISA @EXPORT @EXPORT_OK %EXPORT_TAGS);
 use mod_perl 0.95 qw(PerlStackedHandlers PerlSections PerlHeaderParserHandler PerlFixupHandler PerlHandler);
 use Apache::Constants qw(OK DECLINED HTTP_MOVED_TEMPORARILY BAD_REQUEST NOT_FOUND);
 use Apache::Util qw(escape_uri);
+use Apache::Request;
 use Apache::SSI;
 use Digest::MD5 qw(md5_hex);
 use Cache::FileCache;
 
 BEGIN {
     use Exporter ();
-    $VERSION=0.15;
+    $VERSION=0.17 ;
     @ISA=qw(Exporter Apache::SSI);
     @EXPORT=();
     @EXPORT_OK=qw ( );
@@ -25,9 +26,13 @@ BEGIN {
 # 0.12 : Nov  17, 2001 - Switched output to XML
 # 0.14 : Dec  11, 2001 - Added configuration code
 # 0.15 : Dec  12, 2001 - Improved configuration code to auto-detect namespace (for possible future subclassing)
+# 0.15a: Dec  30, 2001 - Recovered version 0.15 (Thanks - you know who you are if you made it possible) and moved namespace to sourceforge.
+# 0.16a: Jan  08, 2002 -  Added basic JIT handlers to configuration
+# 0.17 : Jan  13, 2002 - Cleaned up some more code and documentation - seems beta-able
+
 
 ### Globals
-my %cache_options=('default_expires_in'=>900,'auto_purge_interval'=>60,'namespace'=>'um_hook'); #If the hooks don't get called in 15 minute, assume it's done
+my %cache_options=('default_expires_in'=>900,'auto_purge_interval'=>60,'namespace'=>'apache_umeter'); #If the hooks don't get called in 15 minute, assume it's done
 my $MaxTime="+900";
 my $TIMEOUT=15;
 
@@ -35,10 +40,9 @@ my $TIMEOUT=15;
 ### Upload meter generator - Master process
 sub u_handler($)
 {
-    my $r=shift;
     ### Upload hook handler
     my $hook_handler= sub {
-        my ($upload, $buf, $len, $hook_data)=@_;
+	my ($upload, $buf, $len, $hook_data)=@_;
         my $hook_cache=new Cache::FileCache(\%cache_options);
         unless ($hook_cache) {
 	    Apache->log_error("Could not instantiate FileCache.  Exiting.");
@@ -55,24 +59,25 @@ sub u_handler($)
 	warn ("Updating cache: $hook_data LEN --> $len") if (_conf("DEBUG")>2);
         $hook_cache->set($hook_data."len",$len);
     };
+    my $r=shift;
     my %args=$r->args;
     return BAD_REQUEST unless defined($args{hook_id});
     my $u_id=$args{hook_id};
     $r->pnotes("u_id" => $u_id);
-    my $rsize=$r->header_in("Content-Length") || 0;
-    $r->log_error("Uploading - hook $u_id - $rsize") if (_conf("DEBUG")>0);
     my $hook_cache=new Cache::FileCache(\%cache_options);
     unless ($hook_cache) {
 	Apache->log_error("Could not instantiate FileCache.  Exiting.");
         return DECLINED; 
     }
     my $TempDir=_conf("TempDir") || undef;
-    $hook_cache->set($u_id."size",$rsize);
+    my $q;
     if (defined($TempDir)) {
-	my $q=Apache::Request->instance($r, HOOK_DATA=>$u_id,UPLOAD_HOOK=>$hook_handler, TEMP_DIR=>$TempDir);
+        $q=Apache::Request->instance($r, HOOK_DATA=>$u_id,UPLOAD_HOOK=>$hook_handler, TEMP_DIR=>$TempDir);
     } else {
-	my $q=Apache::Request->instance($r, HOOK_DATA=>$u_id,UPLOAD_HOOK=>$hook_handler);
+	$q=Apache::Request->instance($r, HOOK_DATA=>$u_id,UPLOAD_HOOK=>$hook_handler);
     }
+    my $rsize=$r->header_in("Content-Length");
+    $hook_cache->set($u_id."size",$rsize);
     return OK;
 }
 
@@ -99,7 +104,7 @@ sub um_handler($)
 {
     my $r=shift;
     $r->no_cache(1);
-    my $q=Apache::Request->instance($r);
+    my $q=Apache::Request->new($r);
     my $hook_id=$q->param('hook_id') || undef;
     my $initial_request=$q->param('returned') || 1;
     return BAD_REQUEST unless defined($hook_id);
@@ -138,13 +143,15 @@ sub um_handler($)
     my $name=$s->server_hostname;
     my $args=$r->args;
     if ($initial_request) { $args=$args.(defined($args)?"&":"")."returned=1";}
-    $r->header_out("Refresh"=>"5;url=http://".$name.$r->uri."?".escape_uri($args));
+    $r->header_out("Refresh"=>"5;url=".($ENV{HTTPS}?"https":"http")."://".$name.$r->uri."?".escape_uri($args));
     $r->send_http_header('text/xml');
     return OK if $r->header_only;
     {
 	print <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE FILE_MANAGER SYSTEM "http://beamartyr.net/Apache_UploadMeter/Apache_UploadMeter.dtd">
+<!DOCTYPE APACHE_UPLOADMETER SYSTEM "http://apache-umeter.sourceforge.net/apache_umeter.dtd
+
+">
 <APACHE_UPLOADMETER HOOK_ID="$hook_id">
     <FILE NAME="$fname">
 	<RECIEVED>$len</RECIEVED>
@@ -153,7 +160,6 @@ sub um_handler($)
 </APACHE_UPLOADMETER>
 EOF
     }
-#    print "<HTML><BODY BGCOLOR=\"White\">Recieving $fname<BR>Recieved $len / $size bytes...</BODY></HTML>";
     return OK;
 }
 
@@ -161,7 +167,7 @@ sub uf_handler($)
 {
     my $r=shift;
     $r->no_cache(1); # CRITICAL!  No caching allowed!
-    my $digest=md5_hex(time,$r->subprocess_env('HTTP_HOST'),$r->subprocess_env('HTTP_X_FORWARDED_FOR'));
+    my $digest=md5_hex(time,(defined $r->subprocess_env('HTTP_HOST') ? $r->subprocess_env('HTTP_HOST') : 0),(defined $r->subprocess_env('HTTP_X_FORWARDED_FOR') ?$r->subprocess_env('HTTP_X_FORWARDED_FOR') : 0 ));
     $r->pnotes("u_id"=>$digest);
     return OK;
 }
@@ -173,11 +179,11 @@ sub r_handler($)
     my $r=shift;
     my $q=Apache::Request->instance($r);
     $r->no_cache(1);
-    $r->send_http_header('text/plain');
-    return OK if $r->header_only;
     my $upload=$q->upload;
     my $name=$upload->filename;
     my $size=$upload->size;
+    $r->send_http_header('text/plain');
+    return OK if $r->header_only;
     print "Done.\n$name\n$size\n";
     return OK;
 }
@@ -214,29 +220,51 @@ function openUploadMeter()
 
 ### Configuration routines
 
+sub upload_jit_handler($)
+{
+    my $r=shift;
+    $r->push_handlers("PerlFixupHandler",\&ufu_handler);
+    $r->push_handlers("PerlHandler",\&r_handler);
+    $r->handler("perl-script");
+    return u_handler($r);
+}
+
+sub meter_jit_handler($)
+{
+    my $r=shift;
+    $r->handler("perl-script");
+    $r->push_handlers("PerlHandler",\&um_handler);
+    return DECLINED;
+}
+    
+sub form_jit_handler($)
+{
+    my $r=shift;
+    $r->handler("perl-script");
+    $r->push_handlers("PerlFixupHandler",\&uf_handler);
+    $r->set_handlers("PerlHandler",[__PACKAGE__]);
+    return DECLINED;
+}
+
 sub configure()
 {
     my $namespace=__PACKAGE__;
     my ($UploadScript,$UploadMeter,$UploadForm)=(_conf("UploadScript"),_conf("UploadMeter"),_conf("UploadForm"));
-    warn "Config $UploadScript - $UploadMeter  - $UploadForm" if (_conf("DEBUG")>1);
+    warn "Configuring for $namespace v$VERSION $UploadScript - $UploadMeter - $UploadForm" if (_conf("DEBUG")>1);
     package Apache::ReadConfig;
     no strict;
     $Location{$UploadScript} = {
-	SetHandler => 'perl-script',
 	Options => '+ExecCGI',
-	PerlHeaderParserHandler => $namespace."::u_handler",
-	PerlFixupHandler => $namespace."::ufu_handler",
+	#PerlHeaderParserHandler => $namespace."::u_handler",
+	PerlHeaderParserHandler => $namespace."::upload_jit_handler",
     };
     $Location{$UploadMeter} = {
-	SetHandler => 'perl-script',
 	Options => '+ExecCGI',
-	PerlHandler => $namespace."::um_handler",
+	PerlHeaderParserHandler => $namespace."::meter_jit_handler",
     };
     $Location{$UploadForm} = {
-	SetHandler => 'perl-script',
 	Options => '+ExecCGI',
-	PerlFixupHandler => $namespace."::uf_handler",
-	PerlHandler => $namespace,
+	PerlHeaderParserHandler => $namespace."::form_jit_handler",
     };
     return 1;
 }
@@ -271,7 +299,7 @@ Apache::UploadMeter - Apache module which implements an upload meter for form-ba
   (in /form.html)
 
   <!--#uploadform-->
-  <INPUT TYPE="FILE"/>
+  <INPUT TYPE="FILE" NAME="theFile"/>
   <INPUT TYPE="SUBMIT"/>
   </FORM>
 
@@ -293,9 +321,39 @@ E<lt>!--#uploadform--E<gt> instead of the existing E<lt>FORME<gt> tag.
 
 NOTE: To use this, mod_perl MUST be built with StackedHandlers enabled.
 
+=head1 INTERFACE
+
+=over
+
+=item *
+
+$Apache::UploadMeter::UploadForm
+
+This should point to the URI on the server which contains the upload form with the special E<lt>!--#uploadform--E<gt> tag.  Note that there should NOT be an opening E<lt>FORME<gt> tag, but there SHOULD be a closing E<lt>/FORME<gt> tag on the HTML page.
+
+=item *
+
+$Apache::UploadMeter::UploadScript
+
+This should point to the target (eg, ACTION) of the upload form.
+
+=item *
+
+$Apache::UploadMeter::UploadMeter
+
+This should point to an unused URI on the server. This URI will be used to provide the progress-meter window.
+
+=item *
+
+$Apache::UploadMeter::TempDir
+
+Can be used to set the TEMP_DIR directive in Apache::Request->new
+
+=back
+
 =head1 AUTHOR AND COPYRIGHT
 
-Copyright (c) 2001 Issac Goldstand E<lt>margol@beamartyr.netE<gt> - All rights reserved.
+Copyright (c) 2001, 2002 Issac Goldstand E<lt>margol@beamartyr.netE<gt> - All rights reserved.
 
 This library is free software. It can be redistributed and/or modified
 under the same terms as Perl itself.
@@ -303,6 +361,6 @@ under the same terms as Perl itself.
 
 =head1 SEE ALSO
 
-L<perl>.
+Apache::Request(3)
 
 =cut
