@@ -1,0 +1,15 @@
+# http://module-build.sourceforge.net/META-spec.html
+#XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
+name:         Apache-UploadMeter
+version:      0.9903
+version_from: UploadMeter.pm
+installdirs:  site
+requires:
+    Apache2::Request:              2.08
+    Cache::Cache:                  0.09
+    Date::Format:                  0.01
+    mod_perl2:                     2.000003
+    Number::Format:                0.01
+
+distribution_type: module
+generated_by: ExtUtils::MakeMaker version 6.30

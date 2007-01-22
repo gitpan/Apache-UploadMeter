@@ -1,9 +1,14 @@
 Changes
 Makefile.PL
 MANIFEST
+MANIFEST.SKIP
 README
 INSTALL
-test.pl
-Apache_Request.patch
 UploadMeter.pm
 LICENSE
+t/TEST.PL
+t/00signature.t
+t/01load.t
+t/conf/extra.conf.in
+META.yml                                 Module meta-data (added by MakeMaker)
+SIGNATURE                                Public-key signature (added by MakeMaker)
