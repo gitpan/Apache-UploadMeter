@@ -30,10 +30,8 @@ use Number::Format ();
 use Date::Format ();
 use HTML::Parser ();
 
-use constant BUFF_LEN => 1024;
-
 BEGIN {
-    $VERSION=0.99_03;
+    $VERSION=0.99_05;
 }
 
 ### Version History
@@ -47,12 +45,12 @@ BEGIN {
 # 0.17 : Jan  13, 2002 - Cleaned up some more code and documentation - seems beta-able
 # 0.21 : Feb   3, 2002 - Prebundled "basic" skin on sourceforge.  Migrate from DTD to schema.  Time/Date formatting currently server-side.
 # 0.22 : Feb   3, 2002 - Fixed typo in URI for XSLT
-# 0.99_03 : Jan  27, 2007 - Upgraded for mod_perl2; we'll have a stable 1.00 release with a few more fixes here
+# 0.99_03 : Jan  22, 2007 - Upgraded for mod_perl2; we'll have a stable 1.00 release with a few more fixes here
+# 0.99_05 : Jan  23, 2007 - Finished outstanding issues using XML-based meter.
 
 ## Presets
-BEGIN {
-    eval ("\$".__PACKAGE__."::XSLT='http://apache-umeter.sourceforge.net/apache-umeter-".$VERSION.".xsl'");
-}
+our $XSLT="http://apache-umeter.sourceforge.net/apache-umeter-".$VERSION.".xsl";
+
 
 ### Globals
 my %cache_options=('default_expires_in'=>900,'auto_purge_interval'=>60,'namespace'=>'apache_umeter','auto_purge_on_get'=>1); #If the hooks don't get called in 15 minute, assume it's done
@@ -100,14 +98,14 @@ sub u_handler
     my $hook_cache=new Cache::FileCache(\%cache_options);
     unless ($hook_cache) {
 	$r->log_reason("[Apache::UploadMeter] Could not instantiate FileCache.", __FILE__.__LINE__);
-        return Apache2::Const::DECLINED; 
+        return Apache2::Const::SERVER_ERROR; 
     }
     # Initialize apreq
     $req->upload_hook(hook_handler($r, $u_id));
     my $rsize=$r->headers_in->{"Content-Length"};
     $hook_cache->set($u_id."size",$rsize);
     $r->log->notice("[Apache::UploadMeter] Initialized cache for $u_id");
-    return Apache2::Const::OK;
+    return Apache2::Const::DECLINED;
 }
 
 ### Upload FixupHandler - make sure that uploadsize get's updated to proper size and that size is set to something (Even 0)
@@ -223,7 +221,7 @@ sub um_handler
     }
     $r->content_type('text/xml');
     return Apache2::Const::OK if $r->header_only;
-    my $xslt=${__PACKAGE__."::XSLT"};
+    my $xslt=$XSLT;
     my $out= <<EOF;
 <?xml version="1.0" encoding="UTF-8"?>
 <?xml-stylesheet type="text/xsl" href="$xslt"?>
@@ -262,7 +260,7 @@ sub r_handler
     my $uploads=$req->upload;
     $r->content_type('text/plain');
     return Apache2::Const::OK if $r->header_only;
-    print "Results:\n";
+    $r->print("Results:\n");
     while (my ($field, $upload) = each %$uploads) {
 	$r->print("Parsed upload field $field:\n\tFilename: ".$upload->upload_filename());
 	$r->print("\n\tSize: ".$upload->upload_size()."\n\n");
@@ -272,12 +270,11 @@ sub r_handler
 }
 
 ### Output filters
+use base qw(Apache2::Filter);
 sub f_uploadform {
     my ($f, $bb) = @_;
     my $bb_ctx = APR::Brigade->new($f->c->pool, $f->c->bucket_alloc);
-    $f->r->log->debug("start");
     unless ($f->ctx) {
-        $f->r->log->debug("cfg");
         my $handler = $f->r->dir_config("AUM_HANDLER") || undef;
         my $meter = $f->r->dir_config("AUM_METER") || undef;
         my $aum_id = $f->r->dir_config("AUM_ID") || undef;
@@ -297,7 +294,7 @@ sub f_uploadform {
 	}
         $f->r->log->debug("[Apache::UploadMeter] Initialized $aum_id with instance $u_id");
 	my $output=<<"EOF";
-<script language="text/javascript">
+<script type="text/javascript">
 // <![CDATA[
 function openUploadMeter()
 {
@@ -321,32 +318,31 @@ EOF
             if (defined(${$f->ctx}{leftover})) {
                 $bb_ctx->insert_tail(APR::Bucket->new($bb_ctx->bucket_alloc, ${$f->ctx}{leftover}));
             }
-            $bb_ctx->insert_tail(APR::Bucket::flush_create($bb_ctx->bucket_alloc));
             $bb_ctx->insert_tail($b);
-            $f->r->log->debug("eos");
-            $f->remove;
             last;
         } elsif ($b->read(my $buf)) {
+            my $outbuf = "";
+            # We need an output buffer, since we can't copy string data going into buckets
+            
             $buf = ${$f->ctx}{leftover}.$buf if defined(${$f->ctx}{leftover});
             while ($buf=~/^(.*?)(<.*?>)(.*)/ms) {
-                my $tag = $2;
-                $buf = $3;
-                $bb_ctx->insert_tail(APR::Bucket->new($bb_ctx->bucket_alloc, $1));
+                my ($pre,$tag) = (gensym(), gensym());
+                ($pre,$tag,$buf) = ($1,$2,$3);
+                $outbuf.=$pre;
                 $f->r->log->debug($tag. ":" . $buf);
                 if ($tag=~/\<\!--\s*?#uploadform\s*?--\>/i) {
-                    $bb_ctx->insert_tail(APR::Bucket->new($bb_ctx->bucket_alloc, ${$f->ctx}{output}));
-                } else {
-                    $bb_ctx->insert_tail(APR::Bucket->new($bb_ctx->bucket_alloc, $tag));
-                }
+                    $tag = ${$f->ctx}{output};
+                }                
+                $outbuf.=$tag;
             }
+            $bb_ctx->insert_tail(APR::Bucket->new($bb_ctx->bucket_alloc, $outbuf));
+
             ${$f->ctx}{leftover} = $buf || undef;
-            $f->r->log->debug("leftover: $buf") if defined( ${$f->ctx}{leftover});
         } else {
             $bb_ctx->insert_tail($b);
         }
     }
     
-    $f->r->log->debug("end");
     my $rv = $f->next->pass_brigade($bb_ctx);
     return $rv unless $rv == APR::Const::SUCCESS;
     return Apache2::Const::OK;
@@ -373,7 +369,7 @@ sub meter_jit_handler($)
     $r->push_handlers("PerlHandler",\&um_handler);
     return Apache2::Const::DECLINED;
 }
-    
+ 
 sub form_jit_handler($)
 {
     my $r=shift;
@@ -447,19 +443,19 @@ sub configure
     my $config = <<"EOC";
 <Location $UH>
     Options +ExecCGI
-    PerlHeaderParserHandler Apache::UploadMeter::upload_jit_handler
+    PerlInitHandler Apache::UploadMeter::upload_jit_handler
     PerlSetVar AUM_ID $val
 </Location>
 <Location $UF>
     Options +ExecCGI
-    PerlHeaderParserHandler Apache::UploadMeter::form_jit_handler
+    PerlInitHandler Apache::UploadMeter::form_jit_handler
     PerlSetVar AUM_ID $val
     PerlSetVar AUM_HANDLER $UH
     PerlSetVar AUM_METER $UM
 </Location>
 <Location $UM>
     Options +ExecCGI
-    PerlHeaderParserHandler Apache::UploadMeter::meter_jit_handler
+    PerlInitHandler Apache::UploadMeter::meter_jit_handler
     PerlSetVar AUM_ID $val
 </Location>
 EOC

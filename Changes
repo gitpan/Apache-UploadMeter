@@ -32,7 +32,7 @@ Updated Schema (switch from DTD to xsd)
 ###
 0.22 : Feb   4, 2002 - Fixed incorrect XSLT address.
 ###
-0.99_03 : Jan  27, 2007
+0.99_03 : Jan  22, 2007
 * Ported to Apache2/mod_perl2
 * Fixed logging utilities to use internal log_level instead of our own $DEBUG level
 * Get rid of function prototypes
@@ -42,3 +42,8 @@ Updated Schema (switch from DTD to xsd)
 * Added normal configuration
 * Added simple test suite (tests sample upload handler, but not meter)
 (Developer release - unstable API)
+###
+0.99_05 : Jan  23, 2007
+* Fix XSLT URL
+* Fix output filter
+* Fix popup window
