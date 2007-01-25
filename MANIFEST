@@ -4,11 +4,12 @@ MANIFEST
 MANIFEST.SKIP
 README
 INSTALL
-UploadMeter.pm
 LICENSE
 t/TEST.PL
 t/00signature.t
 t/01load.t
 t/conf/extra.conf.in
+lib/Apache/UploadMeter.pm
+lib/Apache/UploadMeter/Resources/XML.pm
 META.yml                                 Module meta-data (added by MakeMaker)
 SIGNATURE                                Public-key signature (added by MakeMaker)

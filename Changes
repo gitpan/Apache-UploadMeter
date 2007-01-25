@@ -47,3 +47,8 @@ Updated Schema (switch from DTD to xsd)
 * Fix XSLT URL
 * Fix output filter
 * Fix popup window
+###
+0.99_12 : Jan  23, 2007
+* Added needed use for Apache2::Connection and APR::Pool
+* Use handlers to serve XSL/XSD files
+* RC1 for 1.00 release

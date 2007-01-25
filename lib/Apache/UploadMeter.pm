@@ -5,7 +5,6 @@ use warnings;
 use vars qw($VERSION @ISA);
 use mod_perl2 ();
 use Apache2::Const -compile=>qw(:common :context HTTP_BAD_REQUEST OR_ALL EXEC_ON_READ RAW_ARGS);
-use APR::Const     -compile => ':common';
 use Apache2::RequestRec ();
 use Apache2::Log ();
 use Apache2::RequestUtil ();
@@ -17,6 +16,10 @@ use Apache2::Directive ();
 use Apache2::CmdParms ();
 use Apache2::ServerRec ();
 use Apache2::ServerUtil ();
+use Apache2::Connection ();
+use APR::Const     -compile=>qw(:common);
+use APR::URI ();
+use APR::Pool ();
 use APR::Brigade ();
 use APR::Bucket ();
 use APR::BucketType ();
@@ -31,7 +34,7 @@ use Date::Format ();
 use HTML::Parser ();
 
 BEGIN {
-    $VERSION=0.99_05;
+    $VERSION=0.99_12;
 }
 
 ### Version History
@@ -47,10 +50,7 @@ BEGIN {
 # 0.22 : Feb   3, 2002 - Fixed typo in URI for XSLT
 # 0.99_03 : Jan  22, 2007 - Upgraded for mod_perl2; we'll have a stable 1.00 release with a few more fixes here
 # 0.99_05 : Jan  23, 2007 - Finished outstanding issues using XML-based meter.
-
-## Presets
-our $XSLT="http://apache-umeter.sourceforge.net/apache-umeter-".$VERSION.".xsl";
-
+# 0.99_12 : Jan  23, 2007 - Internalized XML resources.  This is 1.00RC1
 
 ### Globals
 my %cache_options=('default_expires_in'=>900,'auto_purge_interval'=>60,'namespace'=>'apache_umeter','auto_purge_on_get'=>1); #If the hooks don't get called in 15 minute, assume it's done
@@ -198,8 +198,6 @@ sub um_handler
     my $frate = Number::Format::format_bytes($rate, 2).'/s';
 
     # build the Refresh url
-    my $s=$r->server;
-    my $name=$s->server_hostname;
     my $args=$r->args;
     if ($initial_request) { $args=$args.(defined($args)?"&":"")."returned=1";}
     if ($finished) {
@@ -217,15 +215,24 @@ sub um_handler
 	$hook_cache->purge; #best I can do for now...
     } else {
     	# Set a refresh header so the meter gets updated
-        $r->headers_out->add("Refresh"=>"5;url=".($ENV{HTTPS}?"https":"http")."://".$name.':'.$s->port.$r->uri."?".APR::Request::encode($args));
+	my $uri = APR::URI->parse($r->pool, $r->uri);
+	$uri->scheme($ENV{HTTPS}?"https":"http");
+	$uri->port($r->server->port ? $r->server->port : APR::URI::port_of_scheme($uri->scheme));
+	$uri->path($r->uri);
+	$uri->hostname($r->server->server_hostname);
+	$uri->query($args);
+        $r->headers_out->add("Refresh"=>"5;url=".$uri->unparse());
     }
     $r->content_type('text/xml');
     return Apache2::Const::OK if $r->header_only;
-    my $xslt=$XSLT;
+    
+    my $meter = $r->dir_config("AUM_METER") || $r->uri;
+    my $xsl="$meter/styles/xml/aum.xsl";
+    my $xsd="$meter/styles/xml/aum.xsl";
     my $out= <<EOF;
 <?xml version="1.0" encoding="UTF-8"?>
-<?xml-stylesheet type="text/xsl" href="$xslt"?>
-<APACHE_UPLOADMETER HOOK_ID="$hook_id" FILE="$fname" FINISHED="$finished" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://apache-umeter.sourceforge.net/apache-umeter-$VERSION.xsd">
+<?xml-stylesheet type="text/xsl" href="$xsl"?>
+<APACHE_UPLOADMETER HOOK_ID="$hook_id" FILE="$fname" FINISHED="$finished" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="$xsd">
     <RECIEVED VALUE="$len">$flen</RECIEVED>
     <TOTAL VALUE="$size">$fsize</TOTAL>
     <ELAPSEDTIME VALUE="$etime">$fetime</ELAPSEDTIME>
@@ -311,7 +318,6 @@ EOF
   
     while (!$bb->is_empty) {
         my $b = $bb->first;
-        $f->r->log->debug($b->type->name);
         $b->remove;
         
         if ($b->is_eos) {            
@@ -326,10 +332,9 @@ EOF
             
             $buf = ${$f->ctx}{leftover}.$buf if defined(${$f->ctx}{leftover});
             while ($buf=~/^(.*?)(<.*?>)(.*)/ms) {
-                my ($pre,$tag) = (gensym(), gensym());
+                my ($pre,$tag);
                 ($pre,$tag,$buf) = ($1,$2,$3);
                 $outbuf.=$pre;
-                $f->r->log->debug($tag. ":" . $buf);
                 if ($tag=~/\<\!--\s*?#uploadform\s*?--\>/i) {
                     $tag = ${$f->ctx}{output};
                 }                
@@ -457,7 +462,18 @@ sub configure
     Options +ExecCGI
     PerlInitHandler Apache::UploadMeter::meter_jit_handler
     PerlSetVar AUM_ID $val
+    PerlSetVar AUM_METER $UM
 </Location>
+PerlModule Apache::UploadMeter::Resources::XML
+<Location $UM/styles/xml/aum.xsl>
+    SetHandler perl-script
+    PerlResponseHandler Apache::UploadMeter::Resources::XML::xsl
+</Location>
+<Location $UM/styles/xml/aum.xsd>
+    SetHandler perl-script
+    PerlResponseHandler Apache::UploadMeter::Resources::XML::xsd
+</Location>
+
 EOC
 
     $parms->server->add_config([split /\n/, $config]);
