@@ -19,7 +19,7 @@ Parsed upload field filename:
 Done
 TEST1
 
-my $data = UPLOAD_BODY "/perl/upload?hook_id=1234", filename => $file;
+my $data = UPLOAD_BODY "/perl/upload?meter_id=1234", filename => $file;
 
 ok t_cmp(
            $data,

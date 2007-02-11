@@ -78,7 +78,7 @@ sub xsl {
 					</table>
 					<br/>
 					<xsl:variable name="umwidth" select="400"/>
-					<xsl:variable name="received"  select="RECIEVED/@VALUE"/>
+					<xsl:variable name="received"  select="RECEIVED/@VALUE"/>
 					<xsl:variable name="total" select="TOTAL/@VALUE"/>
 					<xsl:variable name="percent" select="round($received div $total * 100)"/>
 					<xsl:variable name="barwidth" select="round($received div $total * $umwidth)"/>
@@ -141,7 +141,7 @@ sub xsd {
 	<xs:element name="APACHE_UPLOADMETER">
 		<xs:complexType>
 			<xs:sequence>
-				<xs:element name="RECIEVED">
+				<xs:element name="RECEIVED">
 					<xs:complexType>
 						<xs:simpleContent>
 							<xs:extension base="xs:string">
@@ -196,7 +196,7 @@ sub xsd {
 					</xs:complexType>
 				</xs:element>
 			</xs:sequence>
-			<xs:attribute name="HOOK_ID" type="xs:hexBinary" use="required"/>
+			<xs:attribute name="METER_ID" type="xs:hexBinary" use="required"/>
 			<xs:attribute name="FILE" type="xs:string" use="required"/>
 			<xs:attribute name="FINISHED" type="xs:boolean" use="required" default="0"/>
 		</xs:complexType>

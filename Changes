@@ -52,3 +52,8 @@ Updated Schema (switch from DTD to xsd)
 * Added needed use for Apache2::Connection and APR::Pool
 * Use handlers to serve XSL/XSD files
 * RC1 for 1.00 release
+###
+0.99_13 : Feb  11, 2007
+* Added JavaScript routines (UploadMeter object + JSON response handler)
+* Docs probably still not up-to-date
+* Not yet RC status for JSON - still need embedded JS example (ala Web 2.0)

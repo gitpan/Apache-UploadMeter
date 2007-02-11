@@ -1,5 +1,8 @@
 package Apache::UploadMeter;
 
+# TODO: JSON-LITE
+# TODO: EMBED-JS, EMBED-DIV
+
 use strict;
 use warnings;
 use vars qw($VERSION @ISA);
@@ -34,7 +37,7 @@ use Date::Format ();
 use HTML::Parser ();
 
 BEGIN {
-    $VERSION=0.99_12;
+    $VERSION=0.99_13;
 }
 
 ### Version History
@@ -51,6 +54,7 @@ BEGIN {
 # 0.99_03 : Jan  22, 2007 - Upgraded for mod_perl2; we'll have a stable 1.00 release with a few more fixes here
 # 0.99_05 : Jan  23, 2007 - Finished outstanding issues using XML-based meter.
 # 0.99_12 : Jan  23, 2007 - Internalized XML resources.  This is 1.00RC1
+# 0.99_13 : Feb  11, 2007 - Initial JSON support + initial UploadMeter object in JavaScript
 
 ### Globals
 my %cache_options=('default_expires_in'=>900,'auto_purge_interval'=>60,'namespace'=>'apache_umeter','auto_purge_on_get'=>1); #If the hooks don't get called in 15 minute, assume it's done
@@ -76,10 +80,13 @@ sub hook_handler {
 	if ($oldlen==0)
 	{
 	    $r->log->notice("[Apache::UploadMeter] Starting upload $hook_data");
-	    my $name=$upload->upload_filename;
-	    $hook_cache->set($hook_data."name",$name);
 	    $hook_cache->set($hook_data."starttime",time());
 	}
+        unless ($hook_cache->get($hook_data."name") eq $upload->upload_filename) {
+            my $name = $upload->upload_filename;
+            $r->log->debug("[Apache::UploadMeter] Updating cache: $hook_data NAME --> $name");
+            $hook_cache->set($hook_data."name",$name);
+        }
 	$r->log->debug("[Apache::UploadMeter] Updating cache: $hook_data LEN --> $len");
         $hook_cache->set($hook_data."len",$len);
     };
@@ -91,7 +98,7 @@ sub u_handler
     my $r=shift;
     # Read request
     my $req = APR::Request::Apache2->handle($r);
-    my $u_id = $req->args('hook_id') || undef;
+    my $u_id = $req->args('meter_id') || undef;
     return Apache2::Const::HTTP_BAD_REQUEST unless defined($u_id);
     $r->pnotes("u_id" => $u_id);
     # Initialize cache
@@ -137,7 +144,7 @@ sub um_handler
     my $r=shift;
     $r->no_cache(1);
     my $req = APR::Request::Apache2->handle($r);
-    my $hook_id=$req->param('hook_id') || undef;
+    my $hook_id=$req->param('meter_id') || undef;
     my $initial_request=!($req->param('returned') || 0);
     return Apache2::Const::HTTP_BAD_REQUEST unless defined($hook_id);
     my $hook_cache=new Cache::FileCache(\%cache_options);
@@ -172,15 +179,33 @@ sub um_handler
     }
     my $size=$hook_cache->get($hook_id."size") || "Unknown";
     my $fname=$hook_cache->get($hook_id."name") || "Unknown";
+    
+    # Get response format.  Favor legacy XML here
+    # Reasoning: XML is more portable; that's one of the reasons we support it
+    # Although I expect 95% of users to use the JSON response, those same 95%
+    # of the users are going to be using the bundled JS code, or forking from
+    # it, meaning they already have what they need.
+    # The other 5% are writing from scratch; hopefully embedding into some non-
+    # browser based application.  They most likely want XML anyway, and its
+    # their life that I want to make easier :-)
+    my $format = $req->param("format") || "XML";
 
-    # This is better done in the XSL, I think.  I want to minimize Apache's work here and leave the browser to calculate the stuff.  What I may eventually do is create a second XSL stylesheet which translates the "minimal" formatting into this formatting.  I'm not going to change this first, but it's on my list of things to do - Issac
-
-    # Calculate elapsed and remaining time
     my $currenttime = time();
     my $starttime=$hook_cache->get($hook_id."starttime") || $currenttime;
-    my $etime = $currenttime - $starttime;
-    my $rtime = ($finished) ? 0 : int ($etime / $len * $size) - $etime;
+  
+    # JSON response
+    if ($format=~/^json$/i) {
+        # Hardcode object for now.  No need to require YAML or YAML::Syck as prereq
+        my $json=sprintf('{"meter_id":"%s","filename":"%s","finished":%d,"status":{"timestamp":%d,"start":%d,"received":%d,"total":%d}}',
+                         $hook_id, $fname, $finished, $currenttime, $starttime, $len, $size);
+        $r->content_type("application/json");
+        $r->set_content_length(length($json));
+        $r->print($json) unless $r->header_only;
+        return Apache2::Const::OK;
+    }
+    # XML response (legacy)
 
+    # This is better done in the XSL, I think.  I want to minimize Apache's work here and leave the browser to calculate the stuff.  What I may eventually do is create a second XSL stylesheet which translates the "minimal" formatting into this formatting.  I'm not going to change this first, but it's on my list of things to do - Issac
     # Calculate total rate and current rate
     my $lastupdatetime = $hook_cache->get($hook_id."lastupdatetime");
     my $lastupdatelen = $hook_cache->get($hook_id."lastupdatelen");
@@ -189,6 +214,10 @@ sub um_handler
     $hook_cache->set($hook_id."lastupdatetime", $currenttime);
     $hook_cache->set($hook_id."lastupdatelen", $len);
     
+    # Calculate elapsed and remaining time
+    my $etime = $currenttime - $starttime;
+    my $rtime = ($finished) ? 0 : int ($etime / $len * $size) - $etime;
+
     # Format values for easy display
     my $fsize = Number::Format::format_bytes($size, 2);
     my $flen = Number::Format::format_bytes($len, 2);
@@ -232,8 +261,8 @@ sub um_handler
     my $out= <<EOF;
 <?xml version="1.0" encoding="UTF-8"?>
 <?xml-stylesheet type="text/xsl" href="$xsl"?>
-<APACHE_UPLOADMETER HOOK_ID="$hook_id" FILE="$fname" FINISHED="$finished" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="$xsd">
-    <RECIEVED VALUE="$len">$flen</RECIEVED>
+<APACHE_UPLOADMETER METER_ID="$hook_id" FILE="$fname" FINISHED="$finished" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="$xsd">
+    <RECEIVED VALUE="$len">$flen</RECEIVED>
     <TOTAL VALUE="$size">$fsize</TOTAL>
     <ELAPSEDTIME VALUE="$etime">$fetime</ELAPSEDTIME>
     <REMAININGTIME VALUE="$rtime">$frtime</REMAININGTIME>
@@ -251,6 +280,7 @@ sub uf_handler
 {
     my $r=shift;
     $r->no_cache(1); # CRITICAL!  No caching allowed!
+    $r->set_last_modified(time());
     my $digest=Digest::SHA1::sha1_hex(time,(defined $r->subprocess_env('HTTP_HOST') ? $r->subprocess_env('HTTP_HOST') : 0),(defined $r->subprocess_env('HTTP_X_FORWARDED_FOR') ?$r->subprocess_env('HTTP_X_FORWARDED_FOR') : 0 ));
     $r->pnotes("u_id"=>$digest);
     return Apache2::Const::OK;
@@ -277,8 +307,7 @@ sub r_handler
 }
 
 ### Output filters
-use base qw(Apache2::Filter);
-sub f_uploadform {
+sub f_xml_uploadform {
     my ($f, $bb) = @_;
     my $bb_ctx = APR::Brigade->new($f->c->pool, $f->c->bucket_alloc);
     unless ($f->ctx) {
@@ -299,13 +328,13 @@ sub f_uploadform {
 	    $f->remove; # We can't do anything useful anymore
             return Apache2::Const::DECLINED;
 	}
-        $f->r->log->debug("[Apache::UploadMeter] Initialized $aum_id with instance $u_id");
+        $f->r->log->debug("[Apache::UploadMeter] Initialized XML $aum_id with instance $u_id");
 	my $output=<<"EOF";
 <script type="text/javascript">
 // <![CDATA[
 function openUploadMeter()
 {
-    uploadWindow=window.open(\"${meter}?hook_id=${u_id}\",\"_new\",\"toolbar=no,location=no,directories=no,status=yes,menubar=no,scrollbars=no,resizeable=no,width=450,height=240\");
+    uploadWindow=window.open(\"${meter}?meter_id=${u_id}\",\"_new\",\"toolbar=no,location=no,directories=no,status=yes,menubar=no,scrollbars=no,resizeable=no,width=450,height=240\");
 }
 // ]]>
 </script>
@@ -353,14 +382,99 @@ EOF
     return Apache2::Const::OK;
 }
 
+sub f_json_uploadform {
+    my ($f, $bb) = @_;
+    my $bb_ctx = APR::Brigade->new($f->c->pool, $f->c->bucket_alloc);
+    unless ($f->ctx) {
+        my $handler = $f->r->dir_config("AUM_HANDLER") || undef;
+        my $meter = $f->r->dir_config("AUM_METER") || undef;
+        my $aum_id = $f->r->dir_config("AUM_ID") || undef;
+        
+        if (!(defined($handler) && defined($aum_id) && defined($meter))) {
+              #&& $srv_cfg->{UploadMeter}->{aum_id}->{UploadForm} eq $uri)) {
+            $f->r->log_error("[Apache::UploadMeter] No configuration data found for this UploadMeter");
+            $f->remove;
+            return Apache2::Const::DECLINED;
+        }
+	my $u_id=$f->r->pnotes('u_id') || undef;
+	if (!(defined($u_id))) {
+	    ### FIX THE ERROR
+	    $f->r->log_error("[Apache::UploadMeter] No u_id in pnotes table. Make sure you ran configure()");
+	    $f->remove; # We can't do anything useful anymore
+            return Apache2::Const::DECLINED;
+	}
+        $f->r->log->debug("[Apache::UploadMeter] Initialized JSON $aum_id with instance $u_id");
+	my $header = "";
+	$header=<<"END-INC";
+<script type="text/javascript" src="$meter/styles/js/prototype.js"></script>
+<script type="text/javascript" src="$meter/styles/js/behaviour.js"></script>
+<script type="text/javascript" src="$meter/styles/js/scriptaculous.js"></script>
+END-INC
+	
+	$header.=<<"END-HEADER";
+<link rel="StyleSheet" type="text/css" href="$meter/styles/css/aum.css"/>
+<script type="text/javascript">
+// <![CDATA[
+var meter_id = "$u_id";
+var meter_url = "$meter";
+// ]]>
+</script>
+<script type="text/javascript" src="$meter/styles/js/aum.js"></script>
+END-HEADER
+	$f->ctx({leftover => undef, header => $header});
+    }
+  
+    while (!$bb->is_empty) {
+        my $b = $bb->first;
+        $b->remove;
+        
+        if ($b->is_eos) {
+            if (defined(${$f->ctx}{leftover})) {
+                $bb_ctx->insert_tail(APR::Bucket->new($bb_ctx->bucket_alloc, ${$f->ctx}{leftover}));
+            }
+            $bb_ctx->insert_tail($b);
+            last;
+        } elsif ($b->read(my $buf)) {
+            my $outbuf = "";
+            # We need an output buffer, since we can't copy string data going into buckets
+            
+            $buf = ${$f->ctx}{leftover}.$buf if defined(${$f->ctx}{leftover});
+            while ($buf=~/^(.*?)(<.*?>)(.*)/ms) {
+                my ($pre,$tag);
+                ($pre,$tag,$buf) = ($1,$2,$3);
+                $outbuf.=$pre;
+                if ($tag=~/^\<head>$/i) {
+                    $tag .= ${$f->ctx}{header};
+                }                
+                $outbuf.=$tag;
+            }
+            $bb_ctx->insert_tail(APR::Bucket->new($bb_ctx->bucket_alloc, $outbuf));
+
+            ${$f->ctx}{leftover} = $buf || undef;
+        } else {
+            $bb_ctx->insert_tail($b);
+        }
+    }
+    
+    my $rv = $f->next->pass_brigade($bb_ctx);
+    return $rv unless $rv == APR::Const::SUCCESS;
+    return Apache2::Const::OK;
+}
+
 
 
 # Input filters
 # We use a null input filter (placed after apreq) to detect finished requests
 
+sub __add_version_string {
+    my $r = shift;
+    $r->err_headers_out->add("X-Powered-By" => "Apache-UploadMeter/$VERSION");
+}
+
 sub upload_jit_handler($)
 {
     my $r=shift;
+    __add_version_string($r);
     $r->push_handlers("PerlFixupHandler",\&ufu_handler);
     #$r->push_handlers("PerlHandler",\&r_handler);
     #$r->handler("perl-script");
@@ -370,6 +484,7 @@ sub upload_jit_handler($)
 sub meter_jit_handler($)
 {
     my $r=shift;
+    __add_version_string($r);
     $r->handler("perl-script");
     $r->push_handlers("PerlHandler",\&um_handler);
     return Apache2::Const::DECLINED;
@@ -378,8 +493,14 @@ sub meter_jit_handler($)
 sub form_jit_handler($)
 {
     my $r=shift;
+    __add_version_string($r);
     $r->push_handlers("PerlFixupHandler",\&uf_handler);
-    $r->add_output_filter(\&f_uploadform);
+    my $format = $r->dir_config("AUM_METER_TYPE");
+    if ($format=~/^XML$/i) {
+        $r->add_output_filter(\&f_xml_uploadform);
+    } elsif ($format=~/^JSON$/i) {
+        $r->add_output_filter(\&f_json_uploadform);
+    }
     return Apache2::Const::DECLINED;
 }
 
@@ -413,6 +534,12 @@ my @directives = (
         req_override    => Apache2::Const::OR_ALL,
         args_how        => Apache2::Const::RAW_ARGS,
         cmd_data        => "UploadForm",
+    }, {
+        name            => "MeterType",
+        func            => __PACKAGE__ . "::configure_invalid",
+        req_override    => Apache2::Const::OR_ALL,
+        args_how        => Apache2::Const::RAW_ARGS,
+        cmd_data        => "MeterType",
     },
 );
 
@@ -437,14 +564,17 @@ sub configure
         }
         $tmp->{$_} = $dir->{$_};
     } qw(UploadMeter UploadHandler UploadForm);
+    $tmp->{MeterType} = $dir->{MeterType} || "JSON";
     # TODO: Fix this and use it to retrieve config vars elsewhere.
     # We cheat nowadays
     my $srv_cfg = $self->{UploadMeter};
     $srv_cfg->{$val}=$tmp;
     $self->{UploadMeter} = $srv_cfg;
-    my ($UH, $UF, $UM) = ($tmp->{UploadHandler},
-                          $tmp->{UploadForm},
-                          $tmp->{UploadMeter});
+    my ($UH, $UF, $UM, $TYPE) = ($tmp->{UploadHandler},
+                                 $tmp->{UploadForm},
+                                 $tmp->{UploadMeter},
+                                 $tmp->{MeterType},
+                                 );
     my $config = <<"EOC";
 <Location $UH>
     Options +ExecCGI
@@ -457,12 +587,14 @@ sub configure
     PerlSetVar AUM_ID $val
     PerlSetVar AUM_HANDLER $UH
     PerlSetVar AUM_METER $UM
+    PerlSetVar AUM_METER_TYPE $TYPE
 </Location>
 <Location $UM>
     Options +ExecCGI
     PerlInitHandler Apache::UploadMeter::meter_jit_handler
     PerlSetVar AUM_ID $val
     PerlSetVar AUM_METER $UM
+    PerlSetVar AUM_METER_TYPE $TYPE
 </Location>
 PerlModule Apache::UploadMeter::Resources::XML
 <Location $UM/styles/xml/aum.xsl>
@@ -473,11 +605,38 @@ PerlModule Apache::UploadMeter::Resources::XML
     SetHandler perl-script
     PerlResponseHandler Apache::UploadMeter::Resources::XML::xsd
 </Location>
+PerlModule Apache::UploadMeter::Resources::JavaScript
+<Location $UM/styles/js/prototype.js>
+    SetHandler perl-script
+    PerlResponseHandler Apache::UploadMeter::Resources::JavaScript::prototype
+</Location>
+<Location $UM/styles/js/behaviour.js>
+    SetHandler perl-script
+    PerlResponseHandler Apache::UploadMeter::Resources::JavaScript::behaviour
+</Location>
+<Location $UM/styles/js/scriptaculous.js>
+    SetHandler perl-script
+    PerlResponseHandler Apache::UploadMeter::Resources::JavaScript::scriptaculous
+</Location>
+<Location $UM/styles/js/aum.js>
+    SetHandler perl-script
+    PerlResponseHandler Apache::UploadMeter::Resources::JavaScript::json_js
+</Location>
+PerlModule Apache::UploadMeter::Resources::CSS
+<Location $UM/styles/css/aum.css>
+    SetHandler perl-script
+    PerlResponseHandler Apache::UploadMeter::Resources::CSS::json_css
+</Location>
+PerlModule Apache::UploadMeter::Resources::HTML
+<Location $UM/styles/aum_popup.html>
+    SetHandler perl-script
+    PerlResponseHandler Apache::UploadMeter::Resources::HTML::json_popup
+</Location>
 
 EOC
 
     $parms->server->add_config([split /\n/, $config]);
-    $parms->server->log->info("Configured $namespace v$VERSION \"$val\" $UH - $UM - $UF");
+    $parms->server->log->info("Configured $namespace v$VERSION \"$val\" $UH - $UM - $UF [$TYPE]");
 }
 
 sub configure_invalid {
@@ -501,6 +660,7 @@ Apache::UploadMeter - Apache module which implements an upload meter for form-ba
 
 =head1 SYNOPSIS
 
+XML-based graphical meter
   (in httpd.conf)
   PerlLoadModule Apache::UploadMeter
   
@@ -508,23 +668,54 @@ Apache::UploadMeter - Apache module which implements an upload meter for form-ba
       UploadForm    /form.html
       UploadHandler /perl/upload
       UploadMeter   /perl/meter
+      MeterType     XML
   </UploadMeter>
 
   (in /form.html)
-
   <!--#uploadform-->
   <INPUT TYPE="FILE" NAME="theFile"/>
   <INPUT TYPE="SUBMIT"/>
   </FORM>
 
+Web 2.0 JS-based graphical meter
+  (in httpd.conf)
+  PerlLoadModule Apache::UploadMeter
+  
+  <UploadMeter MyUploadMeter>
+      UploadForm    /form.html
+      UploadHandler /perl/upload
+      UploadMeter   /perl/meter
+      MeterType     JSON
+  </UploadMeter>
+
+  (in /form.html)
+  <FORM ACTION="/perl/upload" ENCTYPE="multipart/form-data" METHOD="POST" class="uploadform">
+  <INPUT TYPE="FILE" NAME="theFile"/>
+  <INPUT TYPE="SUBMIT"/>
+  </FORM>
+  
+  <DIV class="uploadmeter"></DIV>
+
+
+=head1 ONLINE DEMO
+
+An online demo of a (fairly) up-to-date version of the progress meter can be seen
+at http://uploaddemo.beamartyr.net/
+
 =head1 DESCRIPTION
 
 Apache::UploadMeter is a mod_perl module which implements a status-meter/progress-bar
-to show realtime progress of uploads done using a form with enctype=multipart/formdata.
+to show realtime progress of uploads done using a form with enctype=multipart/form-data.
 
-The only changes needed to be made to existing pages and/or scripts is the replacement
-of the existing E<lt>FORME<gt> tag, which is done automatically the a special directive
-E<lt>!--#uploadform--E<gt> instead of the existing E<lt>FORME<gt> tag.
+The software includes several built-in DHTML widgets to display the progress bar
+out-of-the box, or alternatively you can create your own custom widgets.
+
+To use the enclosed JavaScript powered widget, simply modify the E<lt>formE<gt> tag to
+include class="uploadform" and add a E<lt>divE<gt> with class="uploadmeter" where
+you want the progress meter to appear.
+
+To use the XML/XSL powered widget, simply replace the existing opening E<lt>FORME<gt>
+tag, with the a special directive E<lt>!--#uploadform--E<gt>.
 
 NOTE: To use this module, mod_perl MUST be built with StackedHandlers enabled.
 
@@ -546,7 +737,7 @@ for this uploadmeter.  Currently, names are required and must be unique.
 In a future version, if no name is given, a unique symbol will be generated
 for the meter.
 
-Each UploadMeter section requires 3 sub-parameters
+Each UploadMeter section requires at least 2 sub-parameters
 
 =over
 
@@ -570,9 +761,75 @@ should already exist and do something useful.
 UploadMeter
 
 This should point to an unused URI on the server. This URI will be used to
-provide the progress-meter window.
+provide the progress-meter data, or if legacy XML/XSL mode is used, to
+provide the actual meter window.
+
+=item *
+
+MeterType
+
+Optional parameter specifying the type of pre-bundled meter (see CUSTOMIZATION
+below).  If this parameter is omitted, JSON is assumed as the default value.
 
 =back
+
+=back
+
+=head1 DATA FORMAT
+
+Apache::UploadMeter currently provides 2 types of meters: JavaScript (JSON)
+based, and XML-based.  The JSON is the new default; it's sexier, slicker, works
+out-of-the-box with modern browsers, and with the magic of AJAX and DHTML, doesn't
+even need a popup window.  XML is also still actively supported and is aimed at
+users who wish to further customize the user-experience or provide a non-browser
+based UploadMeter.  Both JSON and XML provide identical data; a formal XSL schema
+can be seen at http://uploaddemo.beamartyr.net/meter/styles/xml/aum.xsd
+
+=head1 BUILT-IN TYPES
+Apache::UploadMeter comes pre-bundled with 2 DHTML-based graphical meters that
+can be used as-is, or just as reference points for builing your own custom
+meters.  Currently the 2 types can be selected by specifying I<JSON> or I<XML> in
+the MeterType configuration directive.  Each of these will cause
+Apache::UploadMeter to add relevant code to your upload form page.
+
+Additionally, I<JSON-LITE> can be specified to use the JavaScript widget
+without using the pre-bundled JavaScript libraries.  To use this, ensure that
+your pages include Prototype-1.5.0, Behaviour-1.1, and Scriptaculous 1.7.0 or above.
+
+=head1 CUSTOMIZATION
+
+Additionally, I<NONE> can be specified, which will allow you to customize your
+user-experience without using any of the built-in meters.  To use this, you
+must define your own widget, and query the UploadMeter URL on your own.
+
+The UploadMeter currently accepts the following parameter:
+
+=over
+
+=item *
+meter_id
+
+The meter identifier.  This must be unique across all meters on the server.
+A future version of this library will likely require that this be server-generated
+and will embed this in the HTML form, either in JavaScript or elsewhere in the DOM
+tree, but for now, you can specify anything you like (as long as each is unique).
+
+=item *
+format
+
+This determines the data format that the meter will return.  Currently JSON can be
+specified to return a JSON structure, otherwise an XML structure will be returned.
+See DATA FORMAT, above.
+
+=item *
+returned
+
+This is a boolean (0 or 1) value used to help reduce race conditions when a new
+upload is initiated.  If it is 0 or not defined, the server will cause the request
+to block (for up to 15 seconds by default - overridable by setting
+$Apache::UploadMeter::TIMEOUT) until the uploading content is detected by the
+server and the meter's datastructure is initialized.  If it is 1, and the
+I<meter_id> is not found on the server, a 404 error will be immediately returned.
 
 =back
 
@@ -590,6 +847,9 @@ Copyright (c) 2001-2007 Issac Goldstand E<lt>margol@beamartyr.netE<gt> - All rig
 
 This library is free software. It can be redistributed and/or modified
 under the same terms as Perl itself.
+
+This software contains third-party components licensed under BSD and MIT style
+open-source licenses.
 
 =head1 SEE ALSO
 
