@@ -4068,10 +4068,11 @@ sub json_js {
 // UploadMeter Object (makes assumptions about the target DOM, but still useful as a reference point)
 var UploadMeter = Class.create();
 UploadMeter.prototype = {
-    delay: 3.0, // Delay in seconds between requests (also almost duration of sliding effect for smoothest exerience)
     status: undefined, 
     ajax: undefined,
-    options: {},
+    options: {
+        delay: 3.0, // Delay in seconds between requests (also almost duration of sliding effect for smoothest exerience)
+    },
 
     // We can't seem to Element.extend our elements in a seperate window...  Dunno why yet
     // but it makes for uglier code :-(
@@ -4132,7 +4133,7 @@ UploadMeter.prototype = {
                   new Ajax.Request(this.url, {
                     parameters: params,
                     onSuccess: this.__onSuccess.bind(this),
-                  });}.bind(this), this.delay);
+                  });}.bind(this), this.options.delay);
             }.bind(this),
             on404: errorFunc,
             on400: errorFunc,
@@ -4177,7 +4178,6 @@ UploadMeter.prototype = {
                 this.dispatchException(e);
             }
         }
-        this.status = json;
         
         var total = json.status.total;
         var seen = json.status.received;
@@ -4201,6 +4201,7 @@ UploadMeter.prototype = {
             'elapsed': elapsed,
             'remaining': remaining
         });
+        this.status = json;
         
         try {
 

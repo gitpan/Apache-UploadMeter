@@ -57,3 +57,7 @@ Updated Schema (switch from DTD to xsd)
 * Added JavaScript routines (UploadMeter object + JSON response handler)
 * Docs probably still not up-to-date
 * Not yet RC status for JSON - still need embedded JS example (ala Web 2.0)
+###
+9.99_14 : Feb  15, 2007
+* Added/fixed lots of documentation
+* Fixed config directive lookups

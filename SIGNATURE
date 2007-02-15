@@ -14,18 +14,19 @@ not run its Makefile.PL or Build.PL.
 -----BEGIN PGP SIGNED MESSAGE-----
 Hash: SHA1
 
-SHA1 c54adef1b9c2945b5b2e82d56cee4e096826ac0f Changes
+SHA1 94dde2e2ca8f6c61265973152c933cc086abe386 Changes
 SHA1 b6a320f6920394cba74f0534cdb9473078c78d6e INSTALL
 SHA1 6cced9626de3277468aedd6ab4deb6f785f46715 LICENSE
-SHA1 d153ea461bfcea10c806fdf4ceade44907a7b8d4 MANIFEST
+SHA1 66429e868109672b85e4b3f185f0abda3fbcec9f MANIFEST
 SHA1 0d6d7a6756cc2739467bd09ec75b4c1253043f39 MANIFEST.SKIP
-SHA1 4e7b7c36c60492e65b47d736d553bc34c5ed7cd9 META.yml
+SHA1 6756c186b75735da9fff5dc07c9c8ec8767fd0fe META.yml
 SHA1 7d312aa89b5ecd868d3678dae4d6f95638190bb8 Makefile.PL
 SHA1 bf0c8eda2dbcd7d54ae6c37cdb384e5d784d79e7 README
-SHA1 073f8ed2b0e9d951bd37990064168257d1b86e6f lib/Apache/UploadMeter.pm
+SHA1 ae298184b6867c5649d87e31a013643a488bf0bd javascript.pod
+SHA1 85092748db4d05c5b20e7c79435ce566e9690b22 lib/Apache/UploadMeter.pm
 SHA1 4ce998862404f3c53c3d02acdec2f7dd990f74d2 lib/Apache/UploadMeter/Resources/CSS.pm
 SHA1 597823907feaeccba2af150bb0cf9cd6a9cfcc59 lib/Apache/UploadMeter/Resources/HTML.pm
-SHA1 ffc5f7caf51749cad6ad27a08f415baa881d007a lib/Apache/UploadMeter/Resources/JavaScript.pm
+SHA1 280126c47e1d78f098d9ca83617c954d420ec6b6 lib/Apache/UploadMeter/Resources/JavaScript.pm
 SHA1 d09abeef575ff4ff7506cf024fe8741e2722997e lib/Apache/UploadMeter/Resources/XML.pm
 SHA1 6547aed3abf75c22bfef0f8572b2844932a42c50 t/00signature.t
 SHA1 10e50c793f911995efd1c2bace37a84adfbdce84 t/01load.t
@@ -34,7 +35,7 @@ SHA1 8a1fb57384680e7ae58760a64641fd943c30d295 t/conf/extra.conf.in
 -----BEGIN PGP SIGNATURE-----
 Version: GnuPG v1.4.5 (GNU/Linux)
 
-iD8DBQFFzvlJ7bEFiW+VItgRAqydAKC58Ll5ZzCovSaQqJz5gV9BU4e2CwCgyb0j
-pJb276vHauKyggzXoCv76hA=
-=R8M5
+iD8DBQFF1Hjr7bEFiW+VItgRArUwAJ4tTtYq3xQi6c6RPibjUFBvsqMAZwCfbqHi
+WGTlATDhD34BbZjRzlWrmuk=
+=Q4Va
 -----END PGP SIGNATURE-----

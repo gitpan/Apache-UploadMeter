@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:                Apache-UploadMeter
-version:             0.9913
+version:             0.9914
 abstract:            Apache module which implements an upload meter for form-based uploads
 license:             ~
 generated_by:        ExtUtils::MakeMaker version 6.31
