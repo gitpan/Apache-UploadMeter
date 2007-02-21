@@ -4071,7 +4071,7 @@ UploadMeter.prototype = {
     status: undefined, 
     ajax: undefined,
     options: {
-        delay: 3.0, // Delay in seconds between requests (also almost duration of sliding effect for smoothest exerience)
+        delay: 3.0 // Delay in seconds between requests (also almost duration of sliding effect for smoothest exerience)
     },
 
     // We can't seem to Element.extend our elements in a seperate window...  Dunno why yet
@@ -4132,11 +4132,11 @@ UploadMeter.prototype = {
                this.ajax = new PeriodicalExecuter(function() {
                   new Ajax.Request(this.url, {
                     parameters: params,
-                    onSuccess: this.__onSuccess.bind(this),
+                    onSuccess: this.__onSuccess.bind(this)
                   });}.bind(this), this.options.delay);
             }.bind(this),
             on404: errorFunc,
-            on400: errorFunc,
+            on400: errorFunc
         }); /* first request */
     },
     

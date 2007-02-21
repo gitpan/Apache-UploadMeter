@@ -4,35 +4,35 @@ JavaScript_Guide for Apache::UploadMeter
 
 =head1 SYNOPSIS
 
-// Register a global callback
-UploadMeter.Responders.register({
-    onCreate: function (meter) {
-        Element.update(meter.desc, "Please wait...");
-    }
-});
+    // Register a global callback
+    UploadMeter.Responders.register({
+        onCreate: function (meter) {
+            Element.update(meter.desc, "Please wait...");
+        }
+    });
     
-// Create a new UploadMeter
-var um = new UploadMeter(el, meter_id, meter_url, {
-    // Callback to be executed every time we get a status update
-    onUpdate: function (status, last) {
-        Element.update('file', "Now uploading: " + status.filename);
-        Element.update('bytes', status.seen + "/" + status.total + "  bytes transfered (" + Util.formatDec(status.currentrate) + " bytes/sec)");
-        Element.update('time', Util.formatTime(status.elapsed) + " elapsed (" + Util.formatTime(status.remaining) + " remaining)"); 
-    },
-    onFinished: function(status, last) {
-    // Callback to be executed when we've detected a complete upload and stop the meter
-        Element.show('closeme');
-    }
-});
-
-// Start our uploadmeter - only do this once the corresponding upload has started (or is about to start)
-um.start();
-
-// Stop (or pause) a previouslky start()ed meter
-um.stop();
-
-// Un-register the default pop-up window behavior 
-Event.stopObserving(aum_el, 'submit', aum_popup);
+    // Create a new UploadMeter
+    var um = new UploadMeter(el, meter_id, meter_url, {
+        // Callback to be executed every time we get a status update
+        onUpdate: function (status, last) {
+            Element.update('file', "Now uploading: " + status.filename);
+            Element.update('bytes', status.seen + "/" + status.total + "  bytes transfered (" + Util.formatDec(status.currentrate) + " bytes/sec)");
+            Element.update('time', Util.formatTime(status.elapsed) + " elapsed (" + Util.formatTime(status.remaining) + " remaining)"); 
+        },
+        onFinished: function(status, last) {
+        // Callback to be executed when we've detected a complete upload and stop the meter
+            Element.show('closeme');
+        }
+    });
+    
+    // Start our uploadmeter - only do this once the corresponding upload has started (or is about to start)
+    um.start();
+    
+    // Stop (or pause) a previouslky start()ed meter
+    um.stop();
+    
+    // Un-register the default pop-up window behavior 
+    Event.stopObserving(aum_el, 'submit', aum_popup);
 
 =head1 DESCRIPTION
 
@@ -56,15 +56,15 @@ Also, it is worth noting that the default behavior looks for an element class
 named "uploadform" and attempts to add to the onSubmit code for it, to trigger
 the bundled default pop-up window.  If you don't want this to happen, just run:
 
-Event.stopObserving(aum_el, 'submit', aum_popup);
+C<Event.stopObserving(aum_el, 'submit', aum_popup);>
 
 
 =head1 API Documentation
 
-=head2 UploadMeter Object
+=head3 UploadMeter Object
 
 This is where most of the action happens.  The public interface to this object
-consists of a constructor, start()/stop() methods, and some callbacks that can 
+consists of a constructor, start and stop methods, and some callbacks that can 
 be used to do extra stuff at various key points in the UploadMeter's lifetime.
 
 =over
@@ -84,8 +84,9 @@ MeterType JSON, this will be embedded in your JavaScript as I<meter_url>.
 The final parameter is a hash of additional optional configuration directives and
 callback routines.
 
-=head3
+=over
 
+=item *
 Parameters
 
 =over
@@ -102,8 +103,7 @@ While this will likely eventually be fixed, as of the time of writing, it's not.
 
 =back
 
-=head3
-
+=item *
 Callback routines
 
 The callback routines all contain zero, one or two parameters.  The parameter
@@ -111,17 +111,19 @@ order will always be I<status>, I<last>.
 
 I<status> contains the current status of the upload.  I<last> always contains
 the B<previous> status of the uploadmeter, such that on a repeating callback
-such as onUpdate, the value of any given request's <last> will always be the
+such as onUpdate, the value of any given request's I<last> will always be the
 same as the previous callback's I<status>.
 
 The parameters contain the following information:
 
-item *
+=over
+
+=item *
 meter_id
 
 Contains the meter_id for the current upload
 
-item *
+=item *
 filename
 
 Contains the filename (as supplied by the client) of the currently uploading file
@@ -135,6 +137,7 @@ Contains a boolean value which will be set to 1 once the upload is complete
 status
 
 =over
+
 =item *
 timestamp
 
@@ -161,12 +164,12 @@ including other form information)
 =item *
 total
 
-This is a shortcut for status.total
+This is a shortcut for C<status.total>
 
 =item *
 seen
 
-This is a shortcut for status.received
+This is a shortcut for C<status.received>
 
 =item *
 progress
@@ -174,7 +177,7 @@ progress
 A value between 0 and 100, representing the percentage of the upload that has
 been completed.
 
-item *
+=item *
 currentrate
 
 The approximate current upload rate (in bytes/second)
@@ -189,12 +192,14 @@ remaining
 
 The approximate time (in seconds) remaining in the upload
 
+=back
+
 The callbacks currently available are:
 
 =over
 
 =item *
-onCreate()
+onCreate(I<>)
 
 This callback is called once just before the first AJAX call is made.  As such,
 it doesn't happen on construction; it happens after um.start(), but before the
@@ -219,13 +224,15 @@ utilized to update other GUI elements, such as is done in the default pop-up.
 onFinished(I<status>, I<last>)
 
 This callback is called after onUpdate if the upload is determined to be complete
-(eg, status.finished == 1)
+(eg, C<tatus.finished == 1>)
 
 =back
 
 =back
 
-=head2 UploadMeter.Responders
+=back
+
+=head3 UploadMeter.Responders
 
 In addition to adding handlers to individual UploadMeter objects, as described
 above, you can also add global callbacks which will be called for *every* uploadmeter
@@ -238,7 +245,8 @@ callback for all UploadMeter instances running on the page.
 Callbacks that are registered this way will receive, as the first parameter,
 the UploadMeter object of the instance which is currently calling into it.
 
-=head2 Util
+=head3 Util
+
 The Util namespace is not an object, but rather a namespace to group some helper
 utility functions that may make your life a bit easier when creating your custom
 user interface.
@@ -247,6 +255,7 @@ user interface.
 
 =item *
 Util.formatTime(I<timestamp>)
+
 This function takes a single parameter, I<timestamp> which is a numeric value
 corresponding to a number of seconds.  This is not necessarily a "unix timestamp"
 (the number of seconds since the epoch) but rather an arbitrary number of seconds.
@@ -256,6 +265,7 @@ HH:mm:ss format
 
 =item *
 Util.formatDec(I<value>)
+
 This function takes a numeric (decimal/floating point) value as a parameter
 and returns a string containing the number and 2 decimal points.
 
@@ -273,6 +283,6 @@ open-source licenses.
 
 =head1 SEE ALSO
 
-Apache::UploadMeter(3)
+L<Apache::UploadMeter>
 
 =cut

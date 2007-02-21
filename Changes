@@ -61,3 +61,7 @@ Updated Schema (switch from DTD to xsd)
 9.99_14 : Feb  15, 2007
 * Added/fixed lots of documentation
 * Fixed config directive lookups
+###
+9.99_14 : Feb  21, 2007
+* Fixed MSIE-specific JS issues
+* Formatted documentation a bit better

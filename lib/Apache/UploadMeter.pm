@@ -35,7 +35,7 @@ use Date::Format ();
 use HTML::Parser ();
 
 BEGIN {
-    $VERSION=0.99_14;
+    $VERSION=0.99_15;
 }
 
 ### Version History
@@ -53,7 +53,8 @@ BEGIN {
 # 0.99_05 : Jan  23, 2007 - Finished outstanding issues using XML-based meter.
 # 0.99_12 : Jan  23, 2007 - Internalized XML resources.  This is 1.00RC1
 # 0.99_13 : Feb  11, 2007 - Initial JSON support + initial UploadMeter object in JavaScript
-# 0.99_14 : Feb  15, 2007 - Fixed config issues, added lots of docs. 
+# 0.99_14 : Feb  15, 2007 - Fixed config issues, added lots of docs.
+# 0.99_15 : Feb  21, 2007 - Fixed some MSIE-specific JavaScript issues, fixed up doc formatting. 
 
 ### Globals
 my %cache_options=('default_expires_in'=>900,'auto_purge_interval'=>60,'namespace'=>'apache_umeter','auto_purge_on_get'=>1); #If the hooks don't get called in 15 minute, assume it's done
